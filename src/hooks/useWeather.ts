@@ -120,8 +120,10 @@ export function useWeather() {
   /** Called when the user picks a suggestion — fetches its weather. */
   async function selectCity(city: CityResult, cityLabel: string) {
     setSuggestions([]);
-    skipNextSearchRef.current = true;
-    setQuery(cityLabel);
+    if (cityLabel !== query) {
+      skipNextSearchRef.current = true;
+      setQuery(cityLabel);
+  }
     setState({ status: "loading" });
     const requestId = ++requestIdRef.current;
 
