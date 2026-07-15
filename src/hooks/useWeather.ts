@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CityResult } from "@/utils/locations";
-import { formatCityLabel } from "@/utils/locations";
+import { formatCityLabel, extractSearchTerm } from "@/utils/locations";
 
 /** One hour's forecast point, used to render the hourly list with .map(). */
 export interface HourlyPoint {
@@ -83,11 +83,19 @@ export function useWeather() {
   const [suggestions, setSuggestions] = useState<CityResult[]>([]);
   const [state, setState] = useState<WeatherState>({ status: "idle" });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSearchRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const lastSearchedRef = useRef("");
 
   // --- Give a "hint" as the user types: debounced live search ---
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
+    }
+
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return;
     }
 
     if (query.trim().length < 2) {
@@ -96,26 +104,26 @@ export function useWeather() {
     }
 
     debounceRef.current = setTimeout(async () => {
-      try {
-        const results = await searchCities(query);
-        setSuggestions(results);
+      try {   
+        const searchTerm = extractSearchTerm(query); 
+        const results = await searchCities(searchTerm);
+      setSuggestions(results);
       } catch {
-        // A failed suggestion lookup shouldn't break the whole page —
-        // just show no hints rather than an error state.
         setSuggestions([]);
       }
     }, 350); // wait for the user to pause typing before searching
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };     
+  },[query]);
 
   /** Called when the user picks a suggestion — fetches its weather. */
   async function selectCity(city: CityResult, cityLabel: string) {
     setSuggestions([]);
+    skipNextSearchRef.current = true;
     setQuery(cityLabel);
     setState({ status: "loading" });
+    const requestId = ++requestIdRef.current;
 
     try {
       const url = `${FORECAST_URL}?latitude=${city.latitude}&longitude=${city.longitude}&current_weather=true&hourly=temperature_2m&timezone=auto`;
@@ -124,9 +132,10 @@ export function useWeather() {
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`);
       }
-
       const data: ForecastApiResponse = await response.json();
-
+         if (requestId !== requestIdRef.current) {
+        return;
+        }
       // Line up the hourly times with the current hour, and take the next 8.
       const startIndex = data.hourly.time.findIndex(
         (t) => t >= data.current_weather.time
@@ -140,6 +149,8 @@ export function useWeather() {
           temperature: data.hourly.temperature_2m[safeStart + i],
         }));
 
+         lastSearchedRef.current = cityLabel;
+
       setState({
         status: "success",
         data: {
@@ -151,6 +162,9 @@ export function useWeather() {
         },
       });
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setState({
         status: "error",
         message:
@@ -172,17 +186,16 @@ export function useWeather() {
 
     // If a suggestion is already sitting there from live typing, just use
     // the top match instead of re-fetching the same search again.
-    if (suggestions.length > 0) {
-      const top = suggestions[0];
-      await selectCity(top, formatCityLabel(top));
-      return;
+    if (trimmed === lastSearchedRef.current) {
+           return;
     }
 
     setState({ status: "loading" });
     try {
-      const results = await searchCities(trimmed);
+      const searchTerm = extractSearchTerm(trimmed);
+      const results = await searchCities(searchTerm);
       if (results.length === 0) {
-        setState({ status: "error", message: `No city found for "${trimmed}".` });
+        setState({ status: "error", message: `No city found for "${searchTerm  }".` });
         return;
       }
       const top = results[0];

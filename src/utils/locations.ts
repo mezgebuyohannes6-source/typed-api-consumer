@@ -20,6 +20,10 @@ export function formatCityLabel(city: CityResult): string {
   return parts.join(", ");
 }
 
+export function extractSearchTerm(text: string): string {
+  const [namePart] = text.split(",");
+  return namePart.trim();
+}
 /**
  * Shown as quick-pick hints before the user has typed anything,
  * so the search bar isn't empty on first load.
