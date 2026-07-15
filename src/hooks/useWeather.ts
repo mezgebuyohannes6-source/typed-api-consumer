@@ -66,6 +66,9 @@ interface ForecastApiResponse {
 async function searchCities(query: string): Promise<CityResult[]> {
   const url = `${GEOCODING_URL}?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
   const response = await fetch(url);
+   if (!response.ok) {
+    throw new Error(`Geocoding request failed with status ${response.status}`);
+  }
   const data: GeocodingApiResponse = await response.json();
 
   return (data.results ?? []).map((r) => ({
